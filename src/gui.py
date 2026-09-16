@@ -2,7 +2,7 @@ import os
 import queue
 import threading
 import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
+from tkinter import ttk, messagebox, simpledialog, filedialog
 from typing import Callable, Any, Dict, List, Optional
 
 import createDB
@@ -15,8 +15,15 @@ class FlatDBGUI:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Virtual Flat JSON Database Engine")
-        self.root.geometry("1000x600")
-        self.root.minsize(800, 500)
+        
+        # Track last opened DB
+        self.last_opened_db: Optional[str] = None
+
+        # Apply UI Theme & Styling
+        self._apply_custom_styles()
+
+        # Responsive Screen Sizing & Window Setup
+        self._apply_responsive_window_size()
 
         # Active state
         self.active_db: Optional[str] = None
@@ -31,12 +38,101 @@ class FlatDBGUI:
         # Plugin System Initialization
         self.plugin_manager = plugins_interact.PluginManager(self)
 
+        self._setup_menu()
         self._setup_ui()
         self._check_ui_queue()
         self.refresh_db_list()
 
         # Load all plugins after UI is completely initialized
         self.plugin_manager.load_all_plugins()
+
+    def _apply_custom_styles(self):
+        """Applies a clean, modern style palette across Tkinter widgets."""
+        self.style = ttk.Style()
+        if "clam" in self.style.theme_names():
+            self.style.theme_use("clam")
+
+        # Palette Colors
+        bg_color = "#f5f6f8"
+        card_color = "#ffffff"
+        primary_color = "#2563eb"
+        text_color = "#1e293b"
+
+        self.root.configure(bg=bg_color)
+
+        # Style Configurations
+        self.style.configure(".", background=bg_color, foreground=text_color, font=("Segoe UI", 10))
+        self.style.configure("TFrame", background=bg_color)
+        self.style.configure("Card.TFrame", background=card_color, relief="flat")
+        
+        # Buttons
+        self.style.configure("TButton", padding=(10, 5), font=("Segoe UI", 9, "bold"))
+        self.style.map("TButton", background=[("active", "#e2e8f0")])
+        
+        self.style.configure("TMenubutton", padding=(10, 5), font=("Segoe UI", 9, "bold"))
+        
+        # Treeview (Data Grid)
+        self.style.configure(
+            "Treeview",
+            background=card_color,
+            fieldbackground=card_color,
+            foreground=text_color,
+            rowheight=28,
+            font=("Segoe UI", 10)
+        )
+        self.style.configure(
+            "Treeview.Heading",
+            font=("Segoe UI", 10, "bold"),
+            background="#e2e8f0",
+            foreground="#0f172a",
+            padding=(5, 5)
+        )
+        self.style.map("Treeview", background=[("selected", primary_color)], foreground=[("selected", "#ffffff")])
+
+    def _apply_responsive_window_size(self):
+        """Calculates screen dimensions and adapts window size and state automatically."""
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+
+        self.root.minsize(min(900, screen_width), min(550, screen_height))
+
+        try:
+            self.root.state("zoomed")
+        except tk.TclError:
+            self.root.geometry(f"{screen_width}x{screen_height}+0+0")
+
+        self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
+
+    # -------------------------------------------------------------------
+    # Menu Bar Setup
+    # -------------------------------------------------------------------
+
+    def _setup_menu(self):
+        menubar = tk.Menu(self.root)
+        
+        # File Menu
+        file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(label="New Database", command=self._on_create_db_click)
+        file_menu.add_command(label="Open Last Opened", command=self._open_last_opened)
+        file_menu.add_command(label="Open File...", command=self._open_external_file)
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.root.quit)
+        menubar.add_cascade(label="File", menu=file_menu)
+
+        # Plugins Menu Item
+        plugin_menu = tk.Menu(menubar, tearoff=0)
+        plugin_menu.add_command(
+            label="Manage Plugins...",
+            command=lambda: self.plugin_manager.show_plugins_dialog(self.root)
+        )
+        plugin_menu.add_command(
+            label="Reload Plugins",
+            command=lambda: self.plugin_manager.load_all_plugins()
+        )
+        menubar.add_cascade(label="Plugins", menu=plugin_menu)
+        
+        self.root.config(menu=menubar)
 
     # -------------------------------------------------------------------
     # Threading & UI Safe Dispatcher
@@ -71,54 +167,87 @@ class FlatDBGUI:
     # -------------------------------------------------------------------
 
     def _setup_ui(self):
-        # Main Layout: Sidebar (Left) + Data Grid (Right)
         main_container = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
-        main_container.pack(fill=tk.BOTH, expand=True)
+        main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         # 1. Sidebar Frame
-        sidebar = ttk.Frame(main_container, width=220, padding=10)
+        sidebar = ttk.Frame(main_container, padding=12, style="Card.TFrame")
         main_container.add(sidebar, weight=1)
 
-        ttk.Label(sidebar, text="Databases", font=("Helvetica", 12, "bold")).pack(anchor=tk.W, pady=(0, 5))
+        ttk.Label(sidebar, text="Databases", font=("Segoe UI", 12, "bold"), background="#ffffff").pack(anchor=tk.W, pady=(0, 8))
 
-        self.db_listbox = tk.Listbox(sidebar, selectmode=tk.SINGLE, exportselection=False)
+        self.db_listbox = tk.Listbox(
+            sidebar,
+            selectmode=tk.SINGLE,
+            exportselection=False,
+            bd=1,
+            relief="solid",
+            highlightthickness=0,
+            font=("Segoe UI", 10),
+            bg="#f8fafc",
+            fg="#1e293b",
+            selectbackground="#2563eb",
+            selectforeground="#ffffff"
+        )
         self.db_listbox.pack(fill=tk.BOTH, expand=True, pady=5)
         self.db_listbox.bind("<<ListboxSelect>>", self._on_db_selected)
 
         ttk.Button(sidebar, text="+ Create Database", command=self._on_create_db_click).pack(fill=tk.X, pady=2)
         ttk.Button(sidebar, text="Rename Selected", command=self._on_rename_db_click).pack(fill=tk.X, pady=2)
         ttk.Button(sidebar, text="Refresh List", command=self.refresh_db_list).pack(fill=tk.X, pady=2)
+        
+        ttk.Button(
+            sidebar, 
+            text="🔌 Plugins Manager", 
+            command=lambda: self.plugin_manager.show_plugins_dialog(self.root)
+        ).pack(fill=tk.X, pady=(10, 2))
 
         # 2. Main Content Frame
-        content_frame = ttk.Frame(main_container, padding=10)
+        content_frame = ttk.Frame(main_container, padding=12, style="Card.TFrame")
         main_container.add(content_frame, weight=4)
 
         # Top Action Bar
-        action_bar = ttk.Frame(content_frame)
-        action_bar.pack(fill=tk.X, pady=(0, 10))
+        action_bar = ttk.Frame(content_frame, style="Card.TFrame")
+        action_bar.pack(fill=tk.X, pady=(0, 12))
 
-        ttk.Label(action_bar, text="Search:").pack(side=tk.LEFT, padx=(0, 5))
+        # Right-side action controls
+        ttk.Button(action_bar, text="Delete Row", command=self._on_delete_row_click).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(action_bar, text="+ Row", command=self._on_add_row_click).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(action_bar, text="+ Column", command=self._on_add_column_click).pack(side=tk.RIGHT, padx=2)
+
+        # Plugins Button
+        ttk.Button(action_bar, text="Plugins", command=lambda: self.plugin_manager.show_plugins_dialog(self.root)).pack(side=tk.RIGHT, padx=2)
+
+        # "Open" Dropdown Menubutton
+        open_mb = ttk.Menubutton(action_bar, text="Open ▾")
+        open_menu = tk.Menu(open_mb, tearoff=0)
+        open_menu.add_command(label="Open Last Opened", command=self._open_last_opened)
+        open_menu.add_command(label="Open File...", command=self._open_external_file)
+        open_mb["menu"] = open_menu
+        open_mb.pack(side=tk.RIGHT, padx=2)
+
+        # "New" Dropdown Menubutton
+        new_mb = ttk.Menubutton(action_bar, text="New ▾")
+        new_menu = tk.Menu(new_mb, tearoff=0)
+        new_menu.add_command(label="New DB", command=self._on_create_db_click)
+        new_mb["menu"] = new_menu
+        new_mb.pack(side=tk.RIGHT, padx=2)
+
+        # Left-side search elements
+        ttk.Label(action_bar, text="Search:", background="#ffffff", font=("Segoe UI", 10, "bold")).pack(side=tk.LEFT, padx=(0, 5))
         self.search_var = tk.StringVar()
         self.search_var.trace_add("write", self._on_search_changed)
-        self.search_entry = ttk.Entry(action_bar, textvariable=self.search_var, width=25)
-        self.search_entry.pack(side=tk.LEFT, padx=(0, 10))
+        self.search_entry = ttk.Entry(action_bar, textvariable=self.search_var)
+        self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
 
-        ttk.Label(action_bar, text="Column:").pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(action_bar, text="Column:", background="#ffffff", font=("Segoe UI", 10, "bold")).pack(side=tk.LEFT, padx=(0, 5))
         self.column_filter_var = tk.StringVar(value="All")
-        self.column_filter_cb = ttk.Combobox(action_bar, textvariable=self.column_filter_var, state="readonly", width=15)
+        self.column_filter_cb = ttk.Combobox(action_bar, textvariable=self.column_filter_var, state="readonly", width=12)
         self.column_filter_cb.pack(side=tk.LEFT, padx=(0, 10))
         self.column_filter_cb.bind("<<ComboboxSelected>>", lambda e: self._on_search_changed())
 
-        # Column & Row Controls
-        ttk.Button(action_bar, text="+ Column", command=self._on_add_column_click).pack(side=tk.RIGHT, padx=2)
-        ttk.Button(action_bar, text="+ Row", command=self._on_add_row_click).pack(side=tk.RIGHT, padx=2)
-        ttk.Button(action_bar, text="Delete Row", command=self._on_delete_row_click).pack(side=tk.RIGHT, padx=2)
-        
-        # Plugins Manager Dialog Trigger
-        ttk.Button(action_bar, text="Plugins", command=lambda: self.plugin_manager.show_plugins_dialog(self.root)).pack(side=tk.RIGHT, padx=2)
-
-        # Data Treeview (Grid)
-        grid_frame = ttk.Frame(content_frame)
+        # Data Treeview Container Frame
+        grid_frame = ttk.Frame(content_frame, style="Card.TFrame")
         grid_frame.pack(fill=tk.BOTH, expand=True)
 
         self.tree_scroll_y = ttk.Scrollbar(grid_frame, orient=tk.VERTICAL)
@@ -140,8 +269,32 @@ class FlatDBGUI:
 
         # Status Bar
         self.status_var = tk.StringVar(value="Ready")
-        self.status_bar = ttk.Label(content_frame, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
-        self.status_bar.pack(fill=tk.X, pady=(5, 0))
+        self.status_bar = ttk.Label(content_frame, textvariable=self.status_var, relief=tk.FLAT, anchor=tk.W, font=("Segoe UI", 9), background="#e2e8f0", padding=(8, 4))
+        self.status_bar.pack(fill=tk.X, pady=(8, 0))
+
+    # -------------------------------------------------------------------
+    # Open File Actions
+    # -------------------------------------------------------------------
+
+    def _open_last_opened(self):
+        """Opens the last opened database if tracked."""
+        if self.last_opened_db:
+            if os.path.exists(self.last_opened_db):
+                self.load_active_db_by_path(self.last_opened_db)
+            else:
+                messagebox.showerror("Error", f"Last opened file no longer exists: {self.last_opened_db}")
+        else:
+            messagebox.showinfo("Notice", "No previously opened database found in this session.")
+
+    def _open_external_file(self):
+        """Opens a file picker dialog to locate and open a JSON database file."""
+        selected_file = filedialog.askopenfilename(
+            title="Open JSON Database",
+            initialdir=createDB.PROJECT_DIR,
+            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")]
+        )
+        if selected_file:
+            self.load_active_db_by_path(selected_file)
 
     # -------------------------------------------------------------------
     # Database Selection & Loading
@@ -165,22 +318,29 @@ class FlatDBGUI:
         if not selection:
             return
         selected_db = self.db_listbox.get(selection[0])
-        self.load_active_db(selected_db)
+        full_path = os.path.join(createDB.PROJECT_DIR, selected_db)
+        self.load_active_db_by_path(full_path, db_name=selected_db)
 
     def load_active_db(self, db_name: str):
-        """Loads selected database content via flatDB in a background thread."""
-        self.active_db = db_name
-        self.status_var.set(f"Loading '{db_name}'...")
+        """Loads selected database content by name."""
+        full_path = os.path.join(createDB.PROJECT_DIR, db_name)
+        self.load_active_db_by_path(full_path, db_name=db_name)
+
+    def load_active_db_by_path(self, full_path: str, db_name: Optional[str] = None):
+        """Loads database content given a full path."""
+        display_name = db_name if db_name else os.path.basename(full_path)
+        self.active_db = display_name
+        self.last_opened_db = full_path
+        self.status_var.set(f"Loading '{display_name}'...")
 
         def task():
-            full_path = os.path.join(createDB.PROJECT_DIR, db_name)
             return flatDB.load_db(full_path)
 
         def callback(db_content):
             self.db_data = db_content
             self._update_column_filter_options()
             self._render_grid(db_content.get("data", []))
-            self.status_var.set(f"Active DB: '{db_name}' | Rows: {len(db_content.get('data', []))}")
+            self.status_var.set(f"Active DB: '{display_name}' | Rows: {len(db_content.get('data', []))}")
 
         self.run_in_background(task, callback)
 
@@ -239,7 +399,7 @@ class FlatDBGUI:
             return
 
         col_name, col_type, default_val = dialog.result
-        full_path = os.path.join(createDB.PROJECT_DIR, self.active_db)
+        full_path = self.last_opened_db or os.path.join(createDB.PROJECT_DIR, self.active_db)
 
         def task():
             return flatDB.add_column(full_path, col_name, col_type, default_val)
@@ -267,7 +427,7 @@ class FlatDBGUI:
         if dialog.result is None:
             return
 
-        full_path = os.path.join(createDB.PROJECT_DIR, self.active_db)
+        full_path = self.last_opened_db or os.path.join(createDB.PROJECT_DIR, self.active_db)
         row_payload = dialog.result
 
         def task():
@@ -291,7 +451,7 @@ class FlatDBGUI:
             return
 
         row_index = int(item_values[0]) - 1
-        full_path = os.path.join(createDB.PROJECT_DIR, self.active_db)
+        full_path = self.last_opened_db or os.path.join(createDB.PROJECT_DIR, self.active_db)
 
         def task():
             return flatDB.delete_row(full_path, row_index)
@@ -304,7 +464,7 @@ class FlatDBGUI:
         self.run_in_background(task, callback)
 
     # -------------------------------------------------------------------
-    # Thread-Safe Search Execution with Sequence Guard (search integration)
+    # Thread-Safe Search Execution
     # -------------------------------------------------------------------
 
     def _on_search_changed(self, *args):
@@ -315,7 +475,6 @@ class FlatDBGUI:
         target_col = self.column_filter_var.get()
         records = self.db_data.get("data", [])
 
-        # Increment sequence ID to discard stale search results
         with self.search_lock:
             self.search_sequence_id += 1
             current_id = self.search_sequence_id
@@ -328,7 +487,6 @@ class FlatDBGUI:
             if result_payload is None:
                 return
             res_id, filtered_records = result_payload
-            # Check sequence guard: ignore if a newer search request was submitted
             with self.search_lock:
                 if res_id != self.search_sequence_id:
                     return
@@ -352,7 +510,6 @@ class FlatDBGUI:
         """Renders columns and rows into Tkinter Treeview."""
         self.displayed_records = records
 
-        # Reset Treeview columns
         for item in self.tree.get_children():
             self.tree.delete(item)
 
@@ -363,12 +520,12 @@ class FlatDBGUI:
         self.tree["show"] = "headings"
 
         self.tree.heading("#", text="#")
-        self.tree.column("#", width=40, anchor=tk.CENTER)
+        self.tree.column("#", width=50, anchor=tk.CENTER)
 
         for col in schema:
             col_type = self.db_data["schema"][col]
             self.tree.heading(col, text=f"{col} ({col_type})")
-            self.tree.column(col, width=120, anchor=tk.W)
+            self.tree.column(col, minwidth=100, width=150, anchor=tk.W)
 
         for index, row_data in enumerate(records, start=1):
             values = [index] + [row_data.get(col, "") for col in schema]
@@ -384,7 +541,7 @@ class ColumnDialog:
     def __init__(self, parent):
         self.top = tk.Toplevel(parent)
         self.top.title("Add Column")
-        self.top.geometry("300x230")
+        self.top.geometry("320x240")
         self.top.resizable(False, False)
         self.result = None
 
@@ -424,7 +581,8 @@ class RowDialog:
     def __init__(self, parent, schema: Dict[str, str]):
         self.top = tk.Toplevel(parent)
         self.top.title("Add Row Record")
-        self.top.geometry("350x400")
+        self.top.geometry("360x420")
+        self.top.minsize(300, 250)
         self.schema = schema
         self.inputs: Dict[str, Any] = {}
         self.result = None
