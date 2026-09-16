@@ -8,6 +8,7 @@ from typing import Callable, Any, Dict, List, Optional
 import createDB
 import flatDB
 import search
+import plugins_interact
 
 
 class FlatDBGUI:
@@ -27,9 +28,15 @@ class FlatDBGUI:
         self.search_lock = threading.Lock()
         self.ui_queue: queue.Queue = queue.Queue()
 
+        # Plugin System Initialization
+        self.plugin_manager = plugins_interact.PluginManager(self)
+
         self._setup_ui()
         self._check_ui_queue()
         self.refresh_db_list()
+
+        # Load all plugins after UI is completely initialized
+        self.plugin_manager.load_all_plugins()
 
     # -------------------------------------------------------------------
     # Threading & UI Safe Dispatcher
@@ -106,6 +113,9 @@ class FlatDBGUI:
         ttk.Button(action_bar, text="+ Column", command=self._on_add_column_click).pack(side=tk.RIGHT, padx=2)
         ttk.Button(action_bar, text="+ Row", command=self._on_add_row_click).pack(side=tk.RIGHT, padx=2)
         ttk.Button(action_bar, text="Delete Row", command=self._on_delete_row_click).pack(side=tk.RIGHT, padx=2)
+        
+        # Plugins Manager Dialog Trigger
+        ttk.Button(action_bar, text="Plugins", command=lambda: self.plugin_manager.show_plugins_dialog(self.root)).pack(side=tk.RIGHT, padx=2)
 
         # Data Treeview (Grid)
         grid_frame = ttk.Frame(content_frame)
@@ -341,7 +351,6 @@ class FlatDBGUI:
     def _render_grid(self, records: List[Dict[str, Any]]):
         """Renders columns and rows into Tkinter Treeview."""
         self.displayed_records = records
-        self.tree.clear() if hasattr(self.tree, 'clear') else None
 
         # Reset Treeview columns
         for item in self.tree.get_children():
