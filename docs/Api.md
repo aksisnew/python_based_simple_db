@@ -1,0 +1,1 @@
+The api construction is very important to make this app dynamic and extendable in future and more and more components can be seamlessly added to it in future
