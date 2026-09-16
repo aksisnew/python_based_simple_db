@@ -1,0 +1,1 @@
+This project is created in python and built in dependencies and additionally gui dependencies like tkinter. This is a json based database maker, modifier and creator. I will add more features to it like Database performance, querry speed, granular control, more options. 
