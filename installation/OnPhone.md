@@ -26,8 +26,40 @@ Follow these sequential steps to set up your native Termux environment, configur
 ### Install a lightweight desktop env and x11 repo (for termux x11 app you need to download alongside the termux app for display output)
 
 
+
 ~~~
 pkg install x11-repo -y
 
 pkg install xfce4 termux-x11-nightly -y
+~~~
+
+
+## Get this repo on your phone, you need some tools for this pls install if you want or you can alternative way to actually get this repo on your termux environment and get this project running! this gets .zip of this repo.
+
+~~~
+curl -L -o project.zip https://github.com/aksisnew/python_based_simple_db/archive/refs/heads/main.zip
+~~~
+
+## then
+
+~~~
+unzip project.zip
+~~~
+
+## then 
+
+~~~
+cd python_based_simple_db-main
+~~~
+
+## cleanup 
+
+~~~
+rm ../project.zip
+~~~
+
+## cd into the folder and then 
+
+~~~
+python3 main.py
 ~~~
