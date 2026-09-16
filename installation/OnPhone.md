@@ -63,3 +63,5 @@ rm ../project.zip
 ~~~
 python3 main.py
 ~~~
+
+> Important note you need the x11 app alongside termux (updated version) and a light weight gui desktop environment only follow official setup manuals and packages from creators of termux , CAUTION: DO THIS ON A SECONDARY PHONE TO REDUCE SECURITY RISK (THOUGH I CANNT GURANTEE FULL SECURITY WITH MY LIMITED KNOWLEDGE)
