@@ -11,8 +11,14 @@ PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 def _sanitize_db_name(db_name: str) -> str:
     """Sanitizes database name input and ensures proper .json extension."""
     clean_name = db_name.strip()
-    # Remove path traversal characters or invalid filename symbols
-    clean_name = re.sub(r'[\\/:*?"<>|]', '', clean_name)
+    # Primary Method: Regex sub for invalid filename symbols
+    try:
+        clean_name = re.sub(r'[\\/:*?"<>|]', '', clean_name)
+    except Exception:
+        # Fallback Method: Character-by-character filtering
+        forbidden = set('\\/:*?"<>|')
+        clean_name = ''.join(c for c in clean_name if c not in forbidden)
+
     if not clean_name.lower().endswith('.json'):
         clean_name += '.json'
     return clean_name
@@ -21,13 +27,34 @@ def _sanitize_db_name(db_name: str) -> str:
 def database_exists(db_name: str) -> bool:
     """Checks if a database file exists in the project directory (case-insensitive)."""
     sanitized_name = _sanitize_db_name(db_name).lower()
+    
+    # Primary Method: os.scandir
     try:
-        # Scan project directory for exact or case-insensitive matches
         for entry in os.scandir(PROJECT_DIR):
             if entry.is_file() and entry.name.lower() == sanitized_name:
                 return True
+        return False
     except OSError:
         pass
+
+    # Fallback Method 1: os.listdir
+    try:
+        for filename in os.listdir(PROJECT_DIR):
+            if filename.lower() == sanitized_name:
+                full_path = os.path.join(PROJECT_DIR, filename)
+                if os.path.isfile(full_path):
+                    return True
+    except OSError:
+        pass
+
+    # Fallback Method 2: Direct os.path.exists check
+    try:
+        direct_path = os.path.join(PROJECT_DIR, sanitized_name)
+        if os.path.exists(direct_path) and os.path.isfile(direct_path):
+            return True
+    except OSError:
+        pass
+
     return False
 
 
@@ -66,7 +93,7 @@ def list_databases() -> List[str]:
 def create_database(db_name: str) -> str:
     """
     Creates a new database JSON file with empty schema and data structure.
-    Uses atomic exclusive creation ('x' mode) to prevent race-condition overwrites.
+    Uses atomic exclusive creation ('x' mode) with 'w' mode fallback to prevent race-condition overwrites.
     
     Returns created database filename.
     """
@@ -81,8 +108,8 @@ def create_database(db_name: str) -> str:
         "data": []
     }
 
+    # Primary Method: Exclusive atomic open ('x' mode)
     try:
-        # Exclusive atomic open: Fails if file was created concurrently between check and open
         with open(filepath, 'x', encoding='utf-8') as f:
             json.dump(initial_payload, f, indent=2)
             f.flush()
@@ -90,6 +117,16 @@ def create_database(db_name: str) -> str:
         return filename
     except FileExistsError:
         raise FileExistsError(f"Database '{filename}' already exists.")
+    except Exception:
+        pass
+
+    # Fallback Method: Standard 'w' mode with existence check
+    try:
+        if os.path.exists(filepath):
+            raise FileExistsError(f"Database '{filename}' already exists.")
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(initial_payload, f, indent=2)
+        return filename
     except Exception as e:
         # Clean up partial zero-byte file if creation failed halfway
         if os.path.exists(filepath):
@@ -147,12 +184,31 @@ def rename_database(old_name: str, new_name: str) -> str:
 
 
 def _rename_associated_backups(old_base_path: str, new_base_path: str) -> None:
-    """Helper to rename matching .bak and .tmp files alongside the main database file."""
+    """Helper to rename matching .bak and .tmp files alongside the main database file with robust fallbacks."""
     for ext in ['.bak', '.tmp']:
         old_aux = f"{old_base_path}{ext}"
         new_aux = f"{new_base_path}{ext}"
         if os.path.exists(old_aux):
+            # Primary Method: os.replace
             try:
                 os.replace(old_aux, new_aux)
+                continue
             except OSError:
+                pass
+            
+            # Fallback Method 1: os.rename
+            try:
+                if os.path.exists(new_aux):
+                    os.remove(new_aux)
+                os.rename(old_aux, new_aux)
+                continue
+            except OSError:
+                pass
+
+            # Fallback Method 2: Manual read-write copy and delete
+            try:
+                with open(old_aux, 'rb') as src, open(new_aux, 'wb') as dst:
+                    dst.write(src.read())
+                os.remove(old_aux)
+            except Exception:
                 pass
